@@ -19,6 +19,12 @@ struct Message {
 #define PROTOCOL_CURVE_TRANSINT_CMD         0xF4         //Curve transmission
 
  
+#define DRIVER_REG_ADDR_MAX                 (26)
+
+#define DRIVER_STATUS_REG_ADDR              200
+#define DRIVER_CONTROL_REG_ADDR             300
+
+
 class ProtocolParser {
 public:
     ProtocolParser();
@@ -28,6 +34,11 @@ public:
     void reset(); 
 
     int event_protocol_handle(uint8_t *buf, uint16_t len);
+    int query_data_getdata(float *buf, uint16_t addr, uint16_t length);
+    int devic_status_getregbuf(uint16_t *buf, uint16_t addr, uint16_t length);
+    int devic_control_getregbuf(uint16_t *buf, uint16_t addr, uint16_t length);
+
+    int devic_control_setregbuf(uint16_t *buf, uint16_t addr, uint16_t length);
 
     static std::vector<char> serialize(const Message& msg) 
     {
@@ -54,7 +65,7 @@ private:
     void Parseframe(uint8_t* buf, uint16_t len);   // 处理并发送响应
     void sendResponse(uint16_t cmd, const std::vector<uint8_t>& data);
 
-    bool getfile_ftp(const std::string& cmdurl, const std::string& output_file);
+    bool getfile_ftp(const std::string& cmdurl, const std::string& image_file);
 };
 
 #endif

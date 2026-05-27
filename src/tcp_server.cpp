@@ -11,7 +11,7 @@
 
 #define SHM_PATH "/tmp/modbus_shm"
 #define SHM_PROJ_ID 'M'
-#define NUM_HOLDING_REGISTERS 100  
+#define NUM_HOLDING_REGISTERS 1024  
 
 
 static void ignoreSigpipe() 
@@ -103,9 +103,7 @@ void TcpServer::handleClient(int client_fd, ThreadSafeQueue<RawData>* queue, uin
         std::string mhexStr = bytesToHex((const char*)bufdata, 10);
         std::cout << "Shared " <<  mhexStr << std::endl;
     }
-    // 连接关闭：通知解析线程该连接已关闭（可以通过发送空数据或特殊标记）
-    // 简单处理：close 时，解析线程中的解析器会被 reset，但需谨慎。
-    // 这里我们发送一个空数据的 RawData 表示连接关闭（也可以在队列中发关闭指令）
+
     RawData close_signal;
     close_signal.client_fd = client_fd;
     close_signal.data.clear();  // 空数据表示 EOF

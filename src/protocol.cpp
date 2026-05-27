@@ -25,6 +25,28 @@ typedef struct __attribute__((packed)){
     char ftpaddr[];
 }UpdateFirware_t;
 
+typedef struct  __attribute__((packed)){ 
+    uint16_t stop_status;
+    uint16_t standby_status;
+    uint16_t run_status;
+    uint16_t malfunction_status;
+    uint16_t alarm_status;
+    uint16_t afar_status;
+    uint16_t emergencystop_status;
+    uint16_t gridconnected_status;
+    uint16_t VFOffline_status;
+    uint16_t deratingdue_status;
+}Driver_Status_t;
+
+typedef struct  __attribute__((packed)){ 
+    uint16_t run_select;
+    uint16_t onlineOffline_set;
+    uint16_t current_limit;
+    uint16_t voltageoutput_set;
+    uint16_t frequency_set;
+}Driver_Control_t;
+
+//Driver_Status_t *DeviceStatusRegister = NULL;
 
 ProtocolParser::ProtocolParser() : state_(WAIT_HEADER), body_len_(0), client_fd_(-1)
 {}
@@ -148,36 +170,141 @@ void ProtocolParser::Parseframe(uint8_t* buf, uint16_t len)
     // 根据命令字处理并发送响应
     std::cout << " CMD : "<< cmd << std::endl;
     switch (cmd) {
-        case PROTOCOL_DATA_QUERY_CMD: {
-            std::string response = "Ack for cmd1";
-            std::vector<uint8_t> resp_data(response.begin(), response.end());
-            sendResponse(cmd, resp_data);
-            break;
-        }
-        case PROTOCOL_PARAMTER_CONFIG_CMD: {
+        case PROTOCOL_DATA_QUERY_CMD: { //数据查询
+            if (payload_len < 4) break;
+            uint16_t regquery_addr = ntohs(*(uint16_t*)payload);
+            uint16_t regquery_len  = ntohs(*(uint16_t*)(payload + 2));
 
-            std::cout << "Protocol at address: " << protoco_driver_regmemcoy << std::endl;
-            std::vector<uint8_t> resp_data = {0x01, 0x02, 0x03 , 0x06, 0x05, 0x00, 0x90};
-            memcpy(resp_data.data(), protoco_driver_regmemcoy, 8);
-            sendResponse(cmd, resp_data);
+            printf("regquery_addr : %d, regquery_len : %d\n", regquery_addr, regquery_len);
+            
+            //if(regquery_len > payload_len) break;  
+            switch(regquery_addr/1000)
+            {
+                case 10:{
+                    std::vector<uint16_t> status_buf(regquery_len);  
+                    printf("ADDR 1001 read\n");
+                    if(devic_status_getregbuf(status_buf.data(), regquery_addr, regquery_len)==0)
+                    {
+                       printf("ADDR 1001 control\n");
+                       std::vector<uint8_t> resp_data; 
+                       resp_data.resize(4 + regquery_len * sizeof(uint16_t));    
+                       uint16_t net_addr = htons(regquery_addr);
+                       memcpy(resp_data.data(), &net_addr, 2);
+                       uint16_t net_len = htons(regquery_len);
+                       memcpy(resp_data.data() + 2, &net_len, 2);  
+                       memcpy(resp_data.data() + 4, status_buf.data(), regquery_len * sizeof(uint16_t));   
+                       sendResponse(cmd, resp_data);                 
+                    }  
+                    else
+                    {
+                        printf("ADDR 1001 error\n");
+                    }
+                }
+                break;
+                case 30:{ 
+                    std::vector<float> data_buf(regquery_len);
+                    if(query_data_getdata(data_buf.data(), regquery_addr, regquery_len) == 0)
+                    {
+                        // 构造响应包：addr + length + 数据
+                        //std::cout << " Send 30Addr : "<< regquery_len << std::endl;
+                        std::vector<uint8_t> resp_data;
+                        resp_data.resize(4 + regquery_len * sizeof(float));
+                        // 写入 addr
+                        uint16_t net_addr = htons(regquery_addr);
+                        memcpy(resp_data.data(), &net_addr, 2);
+                        // 写入 length
+                        uint16_t net_len = htons(regquery_len);
+                        memcpy(resp_data.data() + 2, &net_len, 2);
+                        // 写入 float 数据（按内存原样）
+                        memcpy(resp_data.data() + 4, data_buf.data(), regquery_len * sizeof(float));
+                        sendResponse(cmd, resp_data);
+                    }
+                    else
+                    {
+                         printf("CMD : %X\n", regquery_addr);
+                    }
+                }
+                break;
+                case 40:{
+                    std::vector<uint16_t> control_buf(regquery_len);
+                    if(devic_control_getregbuf(control_buf.data(), regquery_addr, regquery_len) == 0)   
+                    {
+                        std::vector<uint8_t> resp_data;
+                        resp_data.resize(4 + regquery_len * sizeof(uint16_t));
+                        // 写入 addr
+                        uint16_t net_addr = htons(regquery_addr);
+                        memcpy(resp_data.data(), &net_addr, 2);
+                        // 写入 length
+                        uint16_t net_len = htons(regquery_len);
+                        memcpy(resp_data.data() + 2, &net_len, 2);
+                        // 写入 float 数据（按内存原样）
+                        memcpy(resp_data.data() + 4, control_buf.data(), regquery_len * sizeof(uint16_t));
+                        sendResponse(cmd, resp_data);
+                    } 
+                    else
+                    {
+
+                    }
+                }
+                break;
+                default:
+                break;
+            }
             break;
         }
-        case PROTOCOL_EVENT_TRANSINT_CMD:{
-            //getfile_ftp("ftp://172.25.1.137/uboot.img");
-            //std::vector<uint8_t> resp_data = {0x08, 0x06, 0x07};
-            //sendResponse(cmd, resp_data);  
+        case PROTOCOL_PARAMTER_CONFIG_CMD: {//参数配置
+            if (payload_len < 4) break;
+            uint16_t regquery_addr = ntohs(*(uint16_t*)payload);
+            uint16_t regquery_len  = ntohs(*(uint16_t*)(payload + 2));
+
+            printf("regquery_addr : %d, regquery_len : %d\n", regquery_addr, regquery_len);
+
+            if((regquery_addr/1000) != 40 && (regquery_addr/1000) !=0)
+            {
+                break; 
+            }
+            
+            switch((regquery_addr/1000))
+            {
+                case 40:{
+                    std::vector<uint16_t> control_buf(regquery_len);
+                    memcpy(control_buf.data(), payload+4, regquery_len * sizeof(uint16_t));
+                    if(devic_control_setregbuf(control_buf.data(), regquery_addr, regquery_len) == 0)
+                    {
+                        std::vector<uint8_t> resp_data;
+                        resp_data.resize(4 + regquery_len * sizeof(uint16_t));
+                        // 写入 addr
+                        uint16_t net_addr = htons(regquery_addr);
+                        memcpy(resp_data.data(), &net_addr, 2);
+                        // 写入 length
+                        uint16_t net_len = htons(regquery_len);
+                        memcpy(resp_data.data() + 2, &net_len, 2);
+                        // 写入 float 数据（按内存原样）
+                        memcpy(resp_data.data() + 4, control_buf.data(), regquery_len * sizeof(uint16_t));
+                        sendResponse(cmd, resp_data);                        
+                    }
+                }
+                break;
+                case 0:
+
+                break;
+            }
+
+            break;
+        }
+        case PROTOCOL_EVENT_TRANSINT_CMD:{//事件传输
             event_protocol_handle(hdr->data, hdr->head - 6);
             break;         
         }
         case PROTOCOL_CURVE_TRANSINT_CMD:{
-            uint16_t Reg_addr = (hdr->data[0] | (hdr->data[1]<<8)) - 30000;
-            uint8_t length = hdr->data[2] % 26;
-            Reg_addr = Reg_addr % 26;
-            printf("REG_ADDR %d\n",Reg_addr);
+           // uint16_t Reg_addr = (hdr->data[0] | (hdr->data[1]<<8)) - 30000;
+           // uint8_t length = hdr->data[2] % 26;
+          //  Reg_addr = Reg_addr % 26;
+           // printf("REG_ADDR %d\n",Reg_addr);
             std::vector<uint8_t> resp_data;
-            resp_data.resize(length);
-            memcpy(resp_data.data(), protoco_driver_regmemcoy + Reg_addr, length);
-            //memcpy(resp_data.data(), protoco_driver_regmemcoy , 26*2);
+            resp_data.resize(24);
+            //memcpy(resp_data.data(), protoco_driver_regmemcoy + Reg_addr, length);
+            memcpy(resp_data.data(), protoco_driver_regmemcoy , 24);
             sendResponse(cmd, resp_data);
             break;
         }        
@@ -267,10 +394,10 @@ void ProtocolParser::reset()
 }
 
 
-bool ProtocolParser::getfile_ftp(const std::string& cmdurl,const std::string& output_file)
+bool ProtocolParser::getfile_ftp(const std::string& cmdurl,const std::string& image_file)
 {
     std::string url = cmdurl;//"ftp://172.25.1.137/uboot.img";
-    std::string output_file = output_file; 
+    std::string output_file = image_file; 
     std::string username = "";    
     std::string password = "";
 
@@ -281,5 +408,87 @@ bool ProtocolParser::getfile_ftp(const std::string& cmdurl,const std::string& ou
     return ok;
 }
 
+int ProtocolParser::query_data_getdata(float *buf, uint16_t addr, uint16_t length)
+{
+    uint16_t reg_addr = addr - 30000;
+
+    if(protoco_driver_regmemcoy == NULL)
+    {
+        return -1;
+    }
+
+    if(reg_addr > DRIVER_REG_ADDR_MAX && reg_addr == 0)
+    {
+        return -2;
+    }
+
+    reg_addr -= 1;
+
+    memcpy((uint8_t*)buf,(protoco_driver_regmemcoy + (reg_addr * 4)), length * 4);
+
+
+    return 0;
+}
+
+int ProtocolParser::devic_status_getregbuf(uint16_t *buf, uint16_t addr, uint16_t length)
+{
+    uint16_t *status_reg = NULL;
+    uint16_t reg_addr = addr - 10000;
+
+    if(protoco_driver_regmemcoy == NULL)
+    {
+        return -1;
+    }
+    reg_addr -= 1 ;
+    if(reg_addr > 10) return - 2;
+    status_reg = (protoco_driver_regmemcoy + DRIVER_STATUS_REG_ADDR);
+    printf("reg_addr : %d\n",reg_addr);
+    memcpy(buf, status_reg+(reg_addr*2), (length*2));
+
+    return 0;
+}
+
+int ProtocolParser::devic_control_getregbuf(uint16_t *buf, uint16_t addr, uint16_t length)
+{
+    uint16_t *control_reg = NULL;
+
+    uint16_t reg_addr = addr - 40000;
+
+    if(protoco_driver_regmemcoy == NULL)
+    {
+        return -1;
+    }
+
+    reg_addr -= 1;
+    control_reg = (protoco_driver_regmemcoy + DRIVER_CONTROL_REG_ADDR);
+
+    memcpy(buf, control_reg+(reg_addr*4), (length*2));
+
+    return 0;    
+}
+
+int ProtocolParser::devic_control_setregbuf(uint16_t *buf, uint16_t addr, uint16_t length)
+{
+    uint16_t *control_reg = NULL;
+
+    uint16_t reg_addr = addr - 40000;
+
+    if(protoco_driver_regmemcoy == NULL)
+    {
+        return -1;
+    }    
+
+    reg_addr -= 1;
+
+    printf("RUN status: %d\n", (uint32_t)buf[0]);
+
+    control_reg = (protoco_driver_regmemcoy + DRIVER_CONTROL_REG_ADDR);
+
+    memcpy(control_reg+(reg_addr*4), buf, (length*2));
+
+    memcpy(buf, control_reg+(reg_addr*4), (length*2));
+
+    return 0;
+}
 
 
